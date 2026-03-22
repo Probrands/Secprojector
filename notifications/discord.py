@@ -23,12 +23,14 @@ class DiscordNotifier:
         self.webhook_url = config.DISCORD_WEBHOOK_URL
         self.enabled = bool(self.webhook_url)
 
-    def _send(self, embeds: list):
+    def _send(self, embeds: list, ping_everyone: bool = True):
         if not self.enabled:
             logger.warning("Discord webhook not configured, skipping notification")
             return
         try:
             payload = {"embeds": embeds}
+            if ping_everyone:
+                payload["content"] = "@everyone"
             resp = requests.post(self.webhook_url, json=payload, timeout=10)
             if resp.status_code not in (200, 204):
                 logger.warning(f"Discord webhook returned {resp.status_code}")
