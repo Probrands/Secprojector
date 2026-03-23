@@ -12,6 +12,7 @@ from apscheduler.triggers.cron import CronTrigger
 import config
 from edgar.client import EdgarClient
 from edgar.parser import parse_form4_xml
+from edgar.exchange import ExchangeLookup
 from analyzer.scoring import score_filing
 from notifications.discord import DiscordNotifier
 from database.filings import FilingsDatabase
@@ -31,6 +32,7 @@ class InsiderAlertBot:
     def __init__(self):
         logger.info("Initializing SEC Insider Alert Bot...")
         self.edgar = EdgarClient()
+        self.exchange_lookup = ExchangeLookup()
         self.discord = DiscordNotifier()
         self.db = FilingsDatabase()
         self.scheduler = BackgroundScheduler(timezone=ET)
@@ -134,12 +136,22 @@ class InsiderAlertBot:
                 recent_purchases.append(scored)
 
                 if scored["confidence_score"] >= config.MIN_CONFIDENCE_SCORE:
-                    self.discord.send_insider_alert(scored)
-                    alerts_sent += 1
-                    logger.info(
-                        f"ALERT: {scored['ticker']} - {scored['confidence_label']} "
-                        f"(${scored['total_value']:,.0f})"
-                    )
+                    ticker = scored.get("ticker", "")
+                    cik = scored.get("company_cik", "")
+                    exchange = self.exchange_lookup.get_exchange(ticker=ticker, cik=cik)
+
+                    if exchange and exchange in config.ALLOWED_EXCHANGES:
+                        self.discord.send_insider_alert(scored)
+                        alerts_sent += 1
+                        logger.info(
+                            f"ALERT: {ticker} ({exchange}) - {scored['confidence_label']} "
+                            f"(${scored['total_value']:,.0f})"
+                        )
+                    else:
+                        logger.info(
+                            f"Skipped (exchange={exchange or 'unknown'}): {ticker} - "
+                            f"score {scored['confidence_score']}/10"
+                        )
                 else:
                     logger.info(
                         f"Below threshold: {scored['ticker']} - "

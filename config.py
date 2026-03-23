@@ -15,6 +15,7 @@ MAX_REQUESTS_PER_SECOND = 8
 
 # --- Confidence Scoring ---
 MIN_CONFIDENCE_SCORE = int(os.getenv("MIN_CONFIDENCE_SCORE", "7"))
+ALLOWED_EXCHANGES = os.getenv("ALLOWED_EXCHANGES", "NYSE").split(",")
 
 # Insider role weights (higher = more significant)
 ROLE_WEIGHTS = {
