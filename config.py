@@ -14,7 +14,7 @@ SCAN_INTERVAL_MINUTES = int(os.getenv("SCAN_INTERVAL_MINUTES", "10"))
 MAX_REQUESTS_PER_SECOND = 8
 
 # --- Confidence Scoring ---
-MIN_CONFIDENCE_SCORE = int(os.getenv("MIN_CONFIDENCE_SCORE", "4"))
+MIN_CONFIDENCE_SCORE = int(os.getenv("MIN_CONFIDENCE_SCORE", "7"))
 
 # Insider role weights (higher = more significant)
 ROLE_WEIGHTS = {
