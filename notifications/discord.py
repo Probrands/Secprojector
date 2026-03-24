@@ -18,6 +18,12 @@ CONFIDENCE_COLORS = {
 }
 
 
+def _range_bar(position: float, length: int = 10) -> str:
+    """Visual bar showing where the price sits in its 52-week range."""
+    filled = max(0, min(length, round(position / 100 * length)))
+    return "▓" * filled + "░" * (length - filled)
+
+
 class DiscordNotifier:
     def __init__(self):
         self.webhook_url = config.DISCORD_WEBHOOK_URL
@@ -48,6 +54,8 @@ class DiscordNotifier:
         reasons = scored_filing.get("score_reasons", [])
         owners = scored_filing.get("owners", [])
         purchases = scored_filing.get("purchases", [])
+        market = scored_filing.get("market_context")
+        purchase_pct = scored_filing.get("purchase_pct_of_cap")
 
         owner_lines = []
         for o in owners:
@@ -62,7 +70,7 @@ class DiscordNotifier:
             owner_lines.append(f"{name} ({title})")
 
         owner_str = "\n".join(owner_lines) if owner_lines else "Unknown Insider"
-        reasons_str = "\n".join(f"- {r}" for r in reasons)
+        reasons_str = "\n".join(f"• {r}" for r in reasons)
         txn_date = purchases[0].get("date", "N/A") if purchases else "N/A"
 
         color = CONFIDENCE_COLORS.get(confidence, 10038562)
@@ -78,6 +86,27 @@ class DiscordNotifier:
             f"\n"
             f"**Reasons:**\n{reasons_str}"
         )
+
+        if market:
+            description += "\n\n**Market Context:**\n"
+
+            if market.get("current_price"):
+                description += f"• Current Price: ${market['current_price']:,.2f}\n"
+
+            if market.get("range_position") is not None:
+                bar = _range_bar(market["range_position"])
+                description += (
+                    f"• 52W Range: ${market['week_52_low']:,.2f} — ${market['week_52_high']:,.2f}\n"
+                    f"• Position: {bar} {market['range_label']} ({market['range_position']:.0f}%)\n"
+                )
+            elif market.get("range_label"):
+                description += f"• 52W Range: {market['range_label']}\n"
+
+            if market.get("market_cap_label"):
+                cap_line = f"• Market Cap: {market['market_cap_label']}"
+                if purchase_pct:
+                    cap_line += f" (purchase = {purchase_pct} of cap)"
+                description += cap_line + "\n"
 
         self._send([{
             "title": f"SEC INSIDER ALERT - {ticker}",

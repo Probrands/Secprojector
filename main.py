@@ -14,6 +14,7 @@ from edgar.client import EdgarClient
 from edgar.parser import parse_form4_xml
 from edgar.exchange import ExchangeLookup
 from analyzer.scoring import score_filing
+from analyzer.market_context import get_market_context, purchase_vs_market_cap, clear_cache as clear_market_cache
 from notifications.discord import DiscordNotifier
 from database.filings import FilingsDatabase
 
@@ -88,6 +89,7 @@ class InsiderAlertBot:
 
         try:
             logger.info("=== EDGAR SCAN ===")
+            clear_market_cache()
             today = now.strftime("%Y-%m-%d")
             filings = self.edgar.get_recent_form4_filings(date=today)
 
@@ -141,6 +143,16 @@ class InsiderAlertBot:
                     exchange = self.exchange_lookup.get_exchange(ticker=ticker, cik=cik)
 
                     if exchange and exchange in config.ALLOWED_EXCHANGES:
+                        market = get_market_context(ticker)
+                        if market:
+                            scored["market_context"] = market
+                            pct = purchase_vs_market_cap(
+                                scored.get("total_value", 0),
+                                market.get("market_cap"),
+                            )
+                            if pct:
+                                scored["purchase_pct_of_cap"] = pct
+
                         self.discord.send_insider_alert(scored)
                         alerts_sent += 1
                         logger.info(
