@@ -3,3 +3,5 @@ python-dotenv
 pytz
 APScheduler
 yfinance
+fastapi
+uvicorn[standard]

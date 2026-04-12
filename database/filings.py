@@ -45,6 +45,18 @@ class FilingsDatabase:
                 )
             """)
             conn.execute("""
+                CREATE TABLE IF NOT EXISTS company_locations (
+                    cik TEXT PRIMARY KEY,
+                    ticker TEXT,
+                    company_name TEXT,
+                    city TEXT,
+                    state TEXT,
+                    latitude REAL,
+                    longitude REAL,
+                    geocoded_at TEXT
+                )
+            """)
+            conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_purchases_ticker
                 ON insider_purchases(ticker)
             """)
@@ -52,6 +64,14 @@ class FilingsDatabase:
                 CREATE INDEX IF NOT EXISTS idx_purchases_date
                 ON insider_purchases(purchase_date)
             """)
+
+            # Migrate: add location columns to existing insider_purchases tables
+            for col in ("latitude REAL", "longitude REAL"):
+                try:
+                    conn.execute(f"ALTER TABLE insider_purchases ADD COLUMN {col}")
+                except sqlite3.OperationalError:
+                    pass
+
             conn.commit()
 
     def is_processed(self, accession: str) -> bool:
@@ -85,8 +105,9 @@ class FilingsDatabase:
             conn.execute(
                 """INSERT INTO insider_purchases
                    (accession, ticker, company_name, owner_name, officer_title,
-                    total_shares, total_value, purchase_date, confidence_score, filed_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    total_shares, total_value, purchase_date, confidence_score,
+                    filed_at, latitude, longitude)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     scored_filing.get("accession", ""),
                     scored_filing.get("ticker", ""),
@@ -98,6 +119,8 @@ class FilingsDatabase:
                     purchase_date,
                     scored_filing.get("confidence_score", 0),
                     now,
+                    scored_filing.get("latitude"),
+                    scored_filing.get("longitude"),
                 )
             )
             conn.commit()
@@ -131,6 +154,67 @@ class FilingsDatabase:
             })
 
         return results
+
+    # --- Company location cache ---
+
+    def get_company_location(self, cik: str) -> Optional[Dict]:
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                "SELECT city, state, latitude, longitude FROM company_locations WHERE cik = ?",
+                (cik,)
+            ).fetchone()
+
+        if row and row["latitude"] is not None:
+            return {
+                "city": row["city"],
+                "state": row["state"],
+                "latitude": row["latitude"],
+                "longitude": row["longitude"],
+            }
+        return None
+
+    def save_company_location(self, cik: str, location: Dict, ticker: str = "", company_name: str = ""):
+        now = datetime.now(ET).isoformat()
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                """INSERT OR REPLACE INTO company_locations
+                   (cik, ticker, company_name, city, state, latitude, longitude, geocoded_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    cik,
+                    ticker,
+                    company_name,
+                    location.get("city", ""),
+                    location.get("state", ""),
+                    location.get("latitude"),
+                    location.get("longitude"),
+                    now,
+                )
+            )
+            conn.commit()
+
+    # --- Map API queries ---
+
+    def get_purchases_for_map(self, days: int = 90) -> List[Dict]:
+        """Get purchases with location data for the map frontend."""
+        cutoff = (datetime.now(ET) - timedelta(days=days)).strftime("%Y-%m-%d")
+
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                """SELECT ticker, company_name, owner_name, officer_title,
+                          total_shares, total_value, purchase_date,
+                          confidence_score, latitude, longitude, filed_at
+                   FROM insider_purchases
+                   WHERE purchase_date >= ?
+                     AND latitude IS NOT NULL
+                     AND longitude IS NOT NULL
+                   ORDER BY filed_at DESC""",
+                (cutoff,)
+            ).fetchall()
+
+        return [dict(row) for row in rows]
 
     def cleanup_old_records(self, days: int = 90):
         """Remove records older than the given number of days."""
