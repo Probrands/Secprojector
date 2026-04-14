@@ -152,6 +152,26 @@ class InsiderAlertBot:
                         scored["latitude"] = location["latitude"]
                         scored["longitude"] = location["longitude"]
 
+                ticker = scored.get("ticker", "")
+                should_alert = False
+
+                if scored["confidence_score"] >= config.MIN_CONFIDENCE_SCORE:
+                    cik = scored.get("company_cik", "")
+                    exchange = self.exchange_lookup.get_exchange(ticker=ticker, cik=cik)
+
+                    if exchange and exchange in config.ALLOWED_EXCHANGES:
+                        should_alert = True
+                        market = get_market_context(ticker)
+                        if market:
+                            scored["market_context"] = market
+                            scored["company_summary"] = market.get("company_summary", "")
+                            pct = purchase_vs_market_cap(
+                                scored.get("total_value", 0),
+                                market.get("market_cap"),
+                            )
+                            if pct:
+                                scored["purchase_pct_of_cap"] = pct
+
                 self.db.save_purchase(scored)
                 self.db.mark_processed(
                     accession,
@@ -162,33 +182,18 @@ class InsiderAlertBot:
 
                 recent_purchases.append(scored)
 
-                if scored["confidence_score"] >= config.MIN_CONFIDENCE_SCORE:
-                    ticker = scored.get("ticker", "")
-                    cik = scored.get("company_cik", "")
-                    exchange = self.exchange_lookup.get_exchange(ticker=ticker, cik=cik)
-
-                    if exchange and exchange in config.ALLOWED_EXCHANGES:
-                        market = get_market_context(ticker)
-                        if market:
-                            scored["market_context"] = market
-                            pct = purchase_vs_market_cap(
-                                scored.get("total_value", 0),
-                                market.get("market_cap"),
-                            )
-                            if pct:
-                                scored["purchase_pct_of_cap"] = pct
-
-                        self.discord.send_insider_alert(scored)
-                        alerts_sent += 1
-                        logger.info(
-                            f"ALERT: {ticker} ({exchange}) - {scored['confidence_label']} "
-                            f"(${scored['total_value']:,.0f})"
-                        )
-                    else:
-                        logger.info(
-                            f"Skipped (exchange={exchange or 'unknown'}): {ticker} - "
-                            f"score {scored['confidence_score']}/10"
-                        )
+                if should_alert:
+                    self.discord.send_insider_alert(scored)
+                    alerts_sent += 1
+                    logger.info(
+                        f"ALERT: {ticker} ({exchange}) - {scored['confidence_label']} "
+                        f"(${scored['total_value']:,.0f})"
+                    )
+                elif scored["confidence_score"] >= config.MIN_CONFIDENCE_SCORE:
+                    logger.info(
+                        f"Skipped (exchange={exchange or 'unknown'}): {ticker} - "
+                        f"score {scored['confidence_score']}/10"
+                    )
                 else:
                     logger.info(
                         f"Below threshold: {scored['ticker']} - "

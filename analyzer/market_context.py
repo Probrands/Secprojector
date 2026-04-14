@@ -42,12 +42,17 @@ def get_market_context(ticker: str) -> Optional[Dict]:
             _cache[ticker] = None
             return None
 
+        summary = info.get("longBusinessSummary", "")
+        if summary and len(summary) > 300:
+            summary = summary[:297].rsplit(" ", 1)[0] + "..."
+
         result: Dict = {
             "current_price": current_price,
             "week_52_high": week_52_high,
             "week_52_low": week_52_low,
             "market_cap": market_cap,
             "market_cap_label": _format_market_cap(market_cap),
+            "company_summary": summary,
         }
 
         if week_52_high and week_52_low and week_52_high != week_52_low:

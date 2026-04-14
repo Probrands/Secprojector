@@ -65,8 +65,7 @@ class FilingsDatabase:
                 ON insider_purchases(purchase_date)
             """)
 
-            # Migrate: add location columns to existing insider_purchases tables
-            for col in ("latitude REAL", "longitude REAL"):
+            for col in ("latitude REAL", "longitude REAL", "company_summary TEXT"):
                 try:
                     conn.execute(f"ALTER TABLE insider_purchases ADD COLUMN {col}")
                 except sqlite3.OperationalError:
@@ -106,8 +105,8 @@ class FilingsDatabase:
                 """INSERT INTO insider_purchases
                    (accession, ticker, company_name, owner_name, officer_title,
                     total_shares, total_value, purchase_date, confidence_score,
-                    filed_at, latitude, longitude)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    filed_at, latitude, longitude, company_summary)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     scored_filing.get("accession", ""),
                     scored_filing.get("ticker", ""),
@@ -121,6 +120,7 @@ class FilingsDatabase:
                     now,
                     scored_filing.get("latitude"),
                     scored_filing.get("longitude"),
+                    scored_filing.get("company_summary", ""),
                 )
             )
             conn.commit()
@@ -205,7 +205,8 @@ class FilingsDatabase:
             rows = conn.execute(
                 """SELECT ticker, company_name, owner_name, officer_title,
                           total_shares, total_value, purchase_date,
-                          confidence_score, latitude, longitude, filed_at
+                          confidence_score, latitude, longitude, filed_at,
+                          company_summary
                    FROM insider_purchases
                    WHERE purchase_date >= ?
                      AND latitude IS NOT NULL
