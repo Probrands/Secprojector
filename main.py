@@ -15,7 +15,6 @@ from edgar.parser import parse_form4_xml
 from edgar.exchange import ExchangeLookup
 from analyzer.scoring import score_filing
 from analyzer.market_context import get_market_context, purchase_vs_market_cap, clear_cache as clear_market_cache
-from geocoder import get_company_location
 from notifications.discord import DiscordNotifier
 from database.filings import FilingsDatabase
 
@@ -55,23 +54,6 @@ class InsiderAlertBot:
 
         signal.signal(signal.SIGINT, self._shutdown)
         signal.signal(signal.SIGTERM, self._shutdown)
-
-        while self.running:
-            time.sleep(30)
-
-    def start_background(self):
-        """Start the bot without signal handlers (for running in a thread)."""
-        self._setup_schedule()
-        self.scheduler.start()
-        self.discord.send_startup()
-
-        logger.info("Running initial scan...")
-        self._scan()
-
-        logger.info(
-            f"Bot running in background. Scanning every "
-            f"{config.SCAN_INTERVAL_MINUTES} minutes."
-        )
 
         while self.running:
             time.sleep(30)
@@ -144,13 +126,6 @@ class InsiderAlertBot:
                 parsed["accession"] = accession
 
                 scored = score_filing(parsed, recent_purchases)
-
-                cik = scored.get("company_cik", "")
-                if cik:
-                    location = get_company_location(cik, db=self.db)
-                    if location:
-                        scored["latitude"] = location["latitude"]
-                        scored["longitude"] = location["longitude"]
 
                 ticker = scored.get("ticker", "")
                 should_alert = False
